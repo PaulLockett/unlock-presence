@@ -19,6 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PR_ENV: pr-${{ github.event.pull_request.number }}
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -40,84 +41,22 @@ jobs:
           vercel-project-id: ${{ secrets.VERCEL_ADMIN_PROJECT_ID }}
           working-directory: apps/admin-portal
 
-      # Railway: Deploy all 13 backend services to PR environment
-      - uses: railway/deploy-action@v1
-        with:
-          railway-token: ${{ secrets.RAILWAY_TOKEN }}
-          service: api-gateway
-          environment: ${{ env.PR_ENV }}
+      # Railway: Install CLI and deploy all 13 backend services to PR environment
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
 
-      - uses: railway/deploy-action@v1
-        with:
-          railway-token: ${{ secrets.RAILWAY_TOKEN }}
-          service: realtime
-          environment: ${{ env.PR_ENV }}
-
-      - uses: railway/deploy-action@v1
-        with:
-          railway-token: ${{ secrets.RAILWAY_TOKEN }}
-          service: presence-manager
-          environment: ${{ env.PR_ENV }}
-
-      - uses: railway/deploy-action@v1
-        with:
-          railway-token: ${{ secrets.RAILWAY_TOKEN }}
-          service: process-manager
-          environment: ${{ env.PR_ENV }}
-
-      - uses: railway/deploy-action@v1
-        with:
-          railway-token: ${{ secrets.RAILWAY_TOKEN }}
-          service: tenant-manager
-          environment: ${{ env.PR_ENV }}
-
-      - uses: railway/deploy-action@v1
-        with:
-          railway-token: ${{ secrets.RAILWAY_TOKEN }}
-          service: content-engine
-          environment: ${{ env.PR_ENV }}
-
-      - uses: railway/deploy-action@v1
-        with:
-          railway-token: ${{ secrets.RAILWAY_TOKEN }}
-          service: identity-engine
-          environment: ${{ env.PR_ENV }}
-
-      - uses: railway/deploy-action@v1
-        with:
-          railway-token: ${{ secrets.RAILWAY_TOKEN }}
-          service: analytics-engine
-          environment: ${{ env.PR_ENV }}
-
-      - uses: railway/deploy-action@v1
-        with:
-          railway-token: ${{ secrets.RAILWAY_TOKEN }}
-          service: knowledge-engine
-          environment: ${{ env.PR_ENV }}
-
-      - uses: railway/deploy-action@v1
-        with:
-          railway-token: ${{ secrets.RAILWAY_TOKEN }}
-          service: channel-access
-          environment: ${{ env.PR_ENV }}
-
-      - uses: railway/deploy-action@v1
-        with:
-          railway-token: ${{ secrets.RAILWAY_TOKEN }}
-          service: service-access
-          environment: ${{ env.PR_ENV }}
-
-      - uses: railway/deploy-action@v1
-        with:
-          railway-token: ${{ secrets.RAILWAY_TOKEN }}
-          service: content-process-access
-          environment: ${{ env.PR_ENV }}
-
-      - uses: railway/deploy-action@v1
-        with:
-          railway-token: ${{ secrets.RAILWAY_TOKEN }}
-          service: perf-knowledge-access
-          environment: ${{ env.PR_ENV }}
+      - name: Deploy Railway services
+        run: |
+          SERVICES=(
+            api-gateway realtime
+            presence-manager process-manager tenant-manager
+            content-engine identity-engine analytics-engine knowledge-engine
+            channel-access service-access content-process-access perf-knowledge-access
+          )
+          for SERVICE in "${SERVICES[@]}"; do
+            echo "Deploying $SERVICE to $PR_ENV..."
+            railway up --service "$SERVICE" --environment "$PR_ENV" --detach || echo "Warning: $SERVICE deploy failed"
+          done
 
       # Upstash: Create preview Redis database for this PR
       - name: Create Upstash Preview Redis

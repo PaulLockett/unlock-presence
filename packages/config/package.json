@@ -15,7 +15,8 @@
     "pino": "^9.6.0"
   },
   "scripts": {
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
