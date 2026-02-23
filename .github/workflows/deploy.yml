@@ -16,9 +16,11 @@ jobs:
 
       # Supabase: Run migrations on production
       - uses: supabase/setup-cli@v1
-      - run: supabase db push --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
+      - run: supabase db push --linked
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
 
-      # Vercel: Auto-deploys from main branch (configured in Vercel dashboard)
-      # Railway: Auto-deploys from main branch (configured in Railway dashboard)
+      # Vercel and Railway auto-deploy from main branch (configured in dashboards)
+      # Railway: 13 services auto-deploy via GitHub integration
+      # Vercel: 2 Next.js apps auto-deploy via GitHub integration
