@@ -10,7 +10,8 @@
 
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const ALL_SERVICES = [
   "api-gateway",
@@ -107,7 +108,9 @@ function parseEnvFile(path: string): Record<string, string> {
 
 function main() {
   const dryRun = process.argv.includes("--dry-run");
-  const envPath = resolve(import.meta.dirname ?? ".", "../.env");
+  const scriptDir =
+    import.meta.dirname ?? dirname(fileURLToPath(import.meta.url));
+  const envPath = resolve(scriptDir, "../.env");
   const vars = parseEnvFile(envPath);
 
   for (const [varName, targets] of Object.entries(VAR_ROUTING)) {
