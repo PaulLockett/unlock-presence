@@ -1,0 +1,26 @@
+{
+  "name": "@presence-os/config",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./logger": "./src/logger.ts",
+    "./eslint": "./eslint/base.js",
+    "./tsconfig/base": "./tsconfig/base.json",
+    "./tsconfig/nextjs": "./tsconfig/nextjs.json"
+  },
+  "dependencies": {
+    "pino": "^9.6.0"
+  },
+  "scripts": {
+    "lint": "eslint src/"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^25.3.0",
+    "@typescript-eslint/eslint-plugin": "^8.56.0",
+    "@typescript-eslint/parser": "^8.56.0",
+    "eslint": "^10.0.1",
+    "globals": "^17.3.0"
+  }
+}

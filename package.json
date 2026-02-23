@@ -1,0 +1,33 @@
+{
+  "name": "presence-os",
+  "private": true,
+  "scripts": {
+    "dev": "turbo dev",
+    "dev:task-ui": "turbo dev --filter=task-ui",
+    "dev:admin": "turbo dev --filter=admin-portal",
+    "dev:gateway": "turbo dev --filter=api-gateway",
+    "dev:realtime": "turbo dev --filter=realtime",
+    "dev:worker": "turbo dev --filter=worker-runner",
+    "build": "turbo build",
+    "test": "turbo test",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "db:generate": "turbo db:generate --filter=@presence-os/db",
+    "db:migrate": "turbo db:migrate --filter=@presence-os/db",
+    "db:studio": "supabase studio",
+    "db:reset": "supabase db reset"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@typescript-eslint/eslint-plugin": "^8.56.0",
+    "@typescript-eslint/parser": "^8.56.0",
+    "concurrently": "^9.1.2",
+    "eslint": "^10.0.1",
+    "turbo": "^2.4.4",
+    "typescript": "^5.7.3"
+  },
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=20"
+  }
+}

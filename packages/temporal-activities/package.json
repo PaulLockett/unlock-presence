@@ -1,0 +1,26 @@
+{
+  "name": "@presence-os/temporal-activities",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./engines": "./src/engines/index.ts",
+    "./resource-access": "./src/resource-access/index.ts",
+    "./utilities": "./src/utilities/index.ts"
+  },
+  "dependencies": {
+    "@presence-os/ai": "workspace:*",
+    "@presence-os/auth": "workspace:*",
+    "@presence-os/db": "workspace:*",
+    "@presence-os/schemas": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.0",
+    "typescript": "^5.7.3"
+  },
+  "scripts": {
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit"
+  }
+}

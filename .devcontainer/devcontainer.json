@@ -1,0 +1,23 @@
+{
+  "name": "Presence OS",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspace",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": { "version": "20" },
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "forwardPorts": [3000, 3001, 5432, 6379, 7233, 8000, 8001, 8080, 54323],
+  "portsAttributes": {
+    "3000": { "label": "Task UI (C1)" },
+    "3001": { "label": "Admin Portal (C2)" },
+    "8000": { "label": "API Gateway (C3)" },
+    "8001": { "label": "Realtime SSE (I1)" },
+    "8080": { "label": "Temporal UI" },
+    "54323": { "label": "Supabase Studio" },
+    "5432": { "label": "PostgreSQL", "onAutoForward": "silent" },
+    "6379": { "label": "Redis", "onAutoForward": "silent" },
+    "7233": { "label": "Temporal gRPC", "onAutoForward": "silent" }
+  }
+}

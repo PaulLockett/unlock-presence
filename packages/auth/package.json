@@ -1,0 +1,23 @@
+{
+  "name": "@presence-os/auth",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@presence-os/schemas": "workspace:*",
+    "@supabase/supabase-js": "^2.49.1",
+    "hono": "^4.7.4",
+    "jose": "^6.0.8"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.0",
+    "typescript": "^5.7.3"
+  },
+  "scripts": {
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit"
+  }
+}

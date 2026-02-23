@@ -1,0 +1,23 @@
+{
+  "name": "@presence-os/ai",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@openrouter/ai-sdk-provider": "^0.4.3",
+    "@presence-os/schemas": "workspace:*",
+    "ai": "^4.1.61"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.0",
+    "typescript": "^5.7.3",
+    "zod": "^3.24.2"
+  },
+  "scripts": {
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit"
+  }
+}
