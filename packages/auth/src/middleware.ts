@@ -1,25 +1,38 @@
 import type { Context, Next } from "hono";
-import { verifyJwt } from "./jwt.js";
+import {
+  SupabaseJwtStrategy,
+  QStashSignatureStrategy,
+  type AuthStrategy,
+  type AuthResult,
+} from "./strategies.js";
 
-export function authMiddleware() {
+/**
+ * Composable auth middleware — tries strategies in order.
+ * First strategy that returns a non-null result wins.
+ * If no strategies provided, defaults to SupabaseJwtStrategy.
+ */
+export function authMiddleware(strategies?: AuthStrategy[]) {
+  const strats = strategies ?? [new SupabaseJwtStrategy()];
+
   return async (c: Context, next: Next) => {
-    const authHeader = c.req.header("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return c.json({ error: "Unauthorized", message: "Missing bearer token", statusCode: 401 }, 401);
+    let result: AuthResult | null = null;
+
+    for (const strategy of strats) {
+      result = await strategy.authenticate(c);
+      if (result) break;
     }
 
-    const token = authHeader.slice(7);
-    const jwtSecret = process.env.SUPABASE_JWT_SECRET ?? "";
-
-    try {
-      const claims = await verifyJwt(token, jwtSecret);
-      c.set("claims", claims);
-      c.set("tenantId", claims.tenant_id);
-      c.set("userId", claims.sub);
-      await next();
-    } catch {
-      return c.json({ error: "Unauthorized", message: "Invalid token", statusCode: 401 }, 401);
+    if (!result) {
+      return c.json(
+        { error: "Unauthorized", message: "No valid credentials", statusCode: 401 },
+        401,
+      );
     }
+
+    c.set("claims", result);
+    c.set("tenantId", result.tenantId);
+    c.set("userId", result.userId);
+    await next();
   };
 }
 
@@ -27,8 +40,31 @@ export function requireRole(...roles: string[]) {
   return async (c: Context, next: Next) => {
     const claims = c.get("claims");
     if (!claims || !roles.includes(claims.role)) {
-      return c.json({ error: "Forbidden", message: "Insufficient permissions", statusCode: 403 }, 403);
+      return c.json(
+        { error: "Forbidden", message: "Insufficient permissions", statusCode: 403 },
+        403,
+      );
     }
+    await next();
+  };
+}
+
+/**
+ * Convenience middleware for QStash webhook endpoints.
+ * Verifies the Upstash-Signature header. No user context — just message authenticity.
+ */
+export function qstashMiddleware() {
+  const strategy = new QStashSignatureStrategy();
+
+  return async (c: Context, next: Next) => {
+    const result = await strategy.authenticate(c);
+    if (!result) {
+      return c.json(
+        { error: "Unauthorized", message: "Invalid QStash signature", statusCode: 401 },
+        401,
+      );
+    }
+    c.set("claims", result);
     await next();
   };
 }

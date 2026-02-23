@@ -14,3 +14,20 @@ export function decodeJwt(token: string): JwtClaims {
   const payload = jose.decodeJwt(token);
   return payload as unknown as JwtClaims;
 }
+
+/**
+ * Sign a JWT for service-to-service communication.
+ */
+export async function signJwt(
+  payload: Record<string, unknown>,
+  secret: string,
+  expiresIn: string = "1h",
+): Promise<string> {
+  const encoder = new TextEncoder();
+  return new jose.SignJWT(payload)
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setIssuer("presence-os")
+    .setExpirationTime(expiresIn)
+    .sign(encoder.encode(secret));
+}
