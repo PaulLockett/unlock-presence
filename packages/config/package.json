@@ -5,11 +5,13 @@
   "type": "module",
   "exports": {
     "./logger": "./src/logger.ts",
+    "./health": "./src/health.ts",
     "./eslint": "./eslint/base.js",
     "./tsconfig/base": "./tsconfig/base.json",
     "./tsconfig/nextjs": "./tsconfig/nextjs.json"
   },
   "dependencies": {
+    "hono": "^4.7.4",
     "pino": "^9.6.0"
   },
   "scripts": {
