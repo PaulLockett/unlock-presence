@@ -15,8 +15,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm turbo build
 
-      # Supabase: Run migrations on production
+      # Supabase: Link project and run migrations on production
       - uses: supabase/setup-cli@v1
+      - run: supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       - run: supabase db push --linked
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
