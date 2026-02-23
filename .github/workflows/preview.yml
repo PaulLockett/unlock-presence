@@ -23,18 +23,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Vercel: C1 Task UI preview
+      # Vercel: C1 Task UI preview (best-effort — preview deploys don't gate PRs)
       - uses: amondnet/vercel-action@v25
         id: vercel-task-ui
+        continue-on-error: true
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
           vercel-project-id: ${{ secrets.VERCEL_TASK_UI_PROJECT_ID }}
           working-directory: apps/task-ui
 
-      # Vercel: C2 Admin Portal preview
+      # Vercel: C2 Admin Portal preview (best-effort)
       - uses: amondnet/vercel-action@v25
         id: vercel-admin
+        continue-on-error: true
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
@@ -45,7 +47,9 @@ jobs:
       - name: Install Railway CLI
         run: npm install -g @railway/cli
 
+      # Railway deploys are best-effort — individual service failures logged but don't block
       - name: Deploy Railway services
+        continue-on-error: true
         run: |
           SERVICES=(
             api-gateway realtime
@@ -58,9 +62,10 @@ jobs:
             railway up --service "$SERVICE" --environment "$PR_ENV" --detach || echo "Warning: $SERVICE deploy failed"
           done
 
-      # Upstash: Create preview Redis database for this PR
+      # Upstash: Create preview Redis database for this PR (best-effort)
       - name: Create Upstash Preview Redis
         id: upstash
+        continue-on-error: true
         env:
           UPSTASH_API_KEY: ${{ secrets.UPSTASH_API_KEY }}
           UPSTASH_EMAIL: ${{ secrets.UPSTASH_EMAIL }}
@@ -74,8 +79,9 @@ jobs:
 
       # Supabase: Branch DB handled via Supabase GitHub integration
 
-      # Post PR comment with all preview URLs
+      # Post PR comment with all preview URLs (best-effort)
       - uses: actions/github-script@v7
+        continue-on-error: true
         with:
           script: |
             github.rest.issues.createComment({
