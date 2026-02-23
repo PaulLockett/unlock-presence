@@ -1,0 +1,23 @@
+{
+  "name": "@presence-os/notification",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@presence-os/message-bus": "workspace:*",
+    "@presence-os/schemas": "workspace:*",
+    "@upstash/qstash": "^2.7.17",
+    "resend": "^4.1.2"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.0",
+    "typescript": "^5.7.3"
+  },
+  "scripts": {
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit"
+  }
+}
