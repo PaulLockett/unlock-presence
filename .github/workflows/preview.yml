@@ -22,7 +22,7 @@ jobs:
       pull-requests: write
     env:
       PR_ENV: pr-${{ github.event.pull_request.number }}
-      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
