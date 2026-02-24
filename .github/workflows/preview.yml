@@ -58,6 +58,13 @@ jobs:
       - name: Install Railway CLI
         run: npm install -g @railway/cli
 
+      - name: Create Railway PR environment
+        env:
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+        run: |
+          railway link --project "$RAILWAY_PROJECT_ID"
+          railway environment new "$PR_ENV" 2>/dev/null || echo "Environment $PR_ENV already exists"
+
       - name: Deploy Railway services
         env:
           RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
@@ -81,24 +88,33 @@ jobs:
             exit 1
           fi
 
-      # Upstash: Create preview Redis database for this PR
+      # Upstash: Create or reuse preview Redis database for this PR
       - name: Create Upstash Preview Redis
         id: upstash
         env:
           UPSTASH_API_KEY: ${{ secrets.UPSTASH_API_KEY }}
           UPSTASH_EMAIL: ${{ secrets.UPSTASH_EMAIL }}
         run: |
-          RESPONSE=$(curl -s -X POST "https://api.upstash.com/v2/redis/database" \
-            -u "$UPSTASH_EMAIL:$UPSTASH_API_KEY" \
-            -H "Content-Type: application/json" \
-            -d "{\"name\":\"presence-pr-${{ github.event.pull_request.number }}\",\"region\":\"global\",\"primary_region\":\"us-east-1\"}")
-          ENDPOINT=$(echo "$RESPONSE" | jq -r '.endpoint // empty')
-          if [ -z "$ENDPOINT" ]; then
-            echo "::error::Failed to create Upstash Redis: $RESPONSE"
-            exit 1
+          DB_NAME="presence-pr-${{ github.event.pull_request.number }}"
+          # Check if database already exists
+          EXISTING=$(curl -s "https://api.upstash.com/v2/redis/databases" \
+            -u "$UPSTASH_EMAIL:$UPSTASH_API_KEY" | jq -r ".[] | select(.database_name==\"$DB_NAME\") | .endpoint")
+          if [ -n "$EXISTING" ]; then
+            echo "UPSTASH_URL=$EXISTING" >> $GITHUB_OUTPUT
+            echo "Reusing existing Redis: $EXISTING"
+          else
+            RESPONSE=$(curl -s -X POST "https://api.upstash.com/v2/redis/database" \
+              -u "$UPSTASH_EMAIL:$UPSTASH_API_KEY" \
+              -H "Content-Type: application/json" \
+              -d "{\"name\":\"$DB_NAME\",\"region\":\"global\",\"primary_region\":\"us-east-1\"}")
+            ENDPOINT=$(echo "$RESPONSE" | jq -r '.endpoint // empty')
+            if [ -z "$ENDPOINT" ]; then
+              echo "::error::Failed to create Upstash Redis: $RESPONSE"
+              exit 1
+            fi
+            echo "UPSTASH_URL=$ENDPOINT" >> $GITHUB_OUTPUT
+            echo "Preview Redis created: $ENDPOINT"
           fi
-          echo "UPSTASH_URL=$ENDPOINT" >> $GITHUB_OUTPUT
-          echo "Preview Redis created: $ENDPOINT"
 
       # Supabase: Branch DB handled via Supabase GitHub integration
 
