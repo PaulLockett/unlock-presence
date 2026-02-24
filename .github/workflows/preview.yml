@@ -63,7 +63,12 @@ jobs:
           RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
         run: |
           railway link --project "$RAILWAY_PROJECT_ID" --environment production
-          railway environment new "$PR_ENV" --duplicate staging 2>/dev/null || echo "Environment $PR_ENV already exists"
+          if railway environment new "$PR_ENV" --duplicate staging 2>/dev/null; then
+            echo "Created environment $PR_ENV — waiting for service instances to propagate..."
+            sleep 15
+          else
+            echo "Environment $PR_ENV already exists"
+          fi
 
       - name: Deploy Railway services
         env:
