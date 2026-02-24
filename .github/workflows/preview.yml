@@ -3,6 +3,9 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+permissions:
+  pull-requests: write
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -22,34 +25,42 @@ jobs:
       RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
 
-      # Vercel: C1 Task UI preview (best-effort — preview deploys don't gate PRs)
-      - uses: amondnet/vercel-action@v25
+      # Vercel: Deploy C1 Task UI preview via CLI (builds remotely on Vercel)
+      - name: Deploy Task UI preview
         id: vercel-task-ui
-        continue-on-error: true
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_TASK_UI_PROJECT_ID }}
-          working-directory: apps/task-ui
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_TASK_UI_PROJECT_ID }}
+        run: |
+          PREVIEW_URL=$(npx vercel deploy --token="$VERCEL_TOKEN" --yes)
+          echo "preview-url=$PREVIEW_URL" >> $GITHUB_OUTPUT
+          echo "Task UI preview: $PREVIEW_URL"
 
-      # Vercel: C2 Admin Portal preview (best-effort)
-      - uses: amondnet/vercel-action@v25
+      # Vercel: Deploy C2 Admin Portal preview via CLI (builds remotely on Vercel)
+      - name: Deploy Admin Portal preview
         id: vercel-admin
-        continue-on-error: true
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_ADMIN_PROJECT_ID }}
-          working-directory: apps/admin-portal
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_ADMIN_PROJECT_ID }}
+        run: |
+          PREVIEW_URL=$(npx vercel deploy --token="$VERCEL_TOKEN" --yes)
+          echo "preview-url=$PREVIEW_URL" >> $GITHUB_OUTPUT
+          echo "Admin Portal preview: $PREVIEW_URL"
 
-      # Railway: Install CLI and deploy all 13 backend services to PR environment
+      # Railway: Deploy all 13 backend services to isolated PR environment
       - name: Install Railway CLI
         run: npm install -g @railway/cli
 
-      # Railway deploys are best-effort — individual service failures logged but don't block
       - name: Deploy Railway services
-        continue-on-error: true
+        env:
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
         run: |
           SERVICES=(
             api-gateway realtime
@@ -57,15 +68,22 @@ jobs:
             content-engine identity-engine analytics-engine knowledge-engine
             channel-access service-access content-process-access perf-knowledge-access
           )
+          FAILED=0
           for SERVICE in "${SERVICES[@]}"; do
             echo "Deploying $SERVICE to $PR_ENV..."
-            railway up --service "$SERVICE" --environment "$PR_ENV" --detach || echo "Warning: $SERVICE deploy failed"
+            if ! railway up --service "$SERVICE" --environment "$PR_ENV" --project "$RAILWAY_PROJECT_ID" --detach; then
+              echo "::error::$SERVICE deploy failed"
+              FAILED=$((FAILED + 1))
+            fi
           done
+          if [ $FAILED -gt 0 ]; then
+            echo "::error::$FAILED of ${#SERVICES[@]} Railway deploys failed"
+            exit 1
+          fi
 
-      # Upstash: Create preview Redis database for this PR (best-effort)
+      # Upstash: Create preview Redis database for this PR
       - name: Create Upstash Preview Redis
         id: upstash
-        continue-on-error: true
         env:
           UPSTASH_API_KEY: ${{ secrets.UPSTASH_API_KEY }}
           UPSTASH_EMAIL: ${{ secrets.UPSTASH_EMAIL }}
@@ -74,14 +92,18 @@ jobs:
             -u "$UPSTASH_EMAIL:$UPSTASH_API_KEY" \
             -H "Content-Type: application/json" \
             -d "{\"name\":\"presence-pr-${{ github.event.pull_request.number }}\",\"region\":\"global\",\"primary_region\":\"us-east-1\"}")
-          echo "UPSTASH_URL=$(echo $RESPONSE | jq -r '.endpoint')" >> $GITHUB_OUTPUT
-          echo "Preview Redis created: $(echo $RESPONSE | jq -r '.endpoint')"
+          ENDPOINT=$(echo "$RESPONSE" | jq -r '.endpoint // empty')
+          if [ -z "$ENDPOINT" ]; then
+            echo "::error::Failed to create Upstash Redis: $RESPONSE"
+            exit 1
+          fi
+          echo "UPSTASH_URL=$ENDPOINT" >> $GITHUB_OUTPUT
+          echo "Preview Redis created: $ENDPOINT"
 
       # Supabase: Branch DB handled via Supabase GitHub integration
 
-      # Post PR comment with all preview URLs (best-effort)
+      # Post PR comment with all preview URLs
       - uses: actions/github-script@v7
-        continue-on-error: true
         with:
           script: |
             github.rest.issues.createComment({
@@ -92,8 +114,8 @@ jobs:
 
             | Component | Service | URL |
             |-----------|---------|-----|
-            | C1 | Task UI | ${{ steps.vercel-task-ui.outputs.preview-url || 'Deploying...' }} |
-            | C2 | Admin Portal | ${{ steps.vercel-admin.outputs.preview-url || 'Deploying...' }} |
+            | C1 | Task UI | ${{ steps.vercel-task-ui.outputs.preview-url }} |
+            | C2 | Admin Portal | ${{ steps.vercel-admin.outputs.preview-url }} |
             | C3 | API Gateway | Railway PR env |
             | I1 | Realtime SSE | Railway PR env |
             | M1 | Presence Manager | Railway PR env |
@@ -108,5 +130,5 @@ jobs:
             | RA3 | Content Process Access | Railway PR env |
             | RA4 | Perf/Knowledge Access | Railway PR env |
             | R1-R5 | Database | Supabase branch (auto) |
-            | -- | Redis | Upstash preview |`
+            | -- | Redis | ${{ steps.upstash.outputs.UPSTASH_URL }} |`
             });
