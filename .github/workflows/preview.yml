@@ -1,10 +1,34 @@
 name: Preview
+
 on:
   pull_request:
     types: [opened, synchronize, reopened]
 
 jobs:
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo typecheck
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo lint
+
   test:
+    name: Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -12,144 +36,8 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: pnpm }
       - run: pnpm install --frozen-lockfile
-      - run: pnpm turbo typecheck lint test
+      - run: pnpm turbo test
 
-  deploy-previews:
-    needs: test
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-    env:
-      PR_ENV: pr-${{ github.event.pull_request.number }}
-      RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: pnpm }
-      - run: pnpm install --frozen-lockfile
-
-      # Vercel: Deploy C1 Task UI preview via CLI (builds remotely on Vercel)
-      - name: Deploy Task UI preview
-        id: vercel-task-ui
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_TASK_UI_PROJECT_ID }}
-        run: |
-          PREVIEW_URL=$(npx vercel deploy --token="$VERCEL_TOKEN" --yes)
-          echo "preview-url=$PREVIEW_URL" >> $GITHUB_OUTPUT
-          echo "Task UI preview: $PREVIEW_URL"
-
-      # Vercel: Deploy C2 Admin Portal preview via CLI (builds remotely on Vercel)
-      - name: Deploy Admin Portal preview
-        id: vercel-admin
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_ADMIN_PROJECT_ID }}
-        run: |
-          PREVIEW_URL=$(npx vercel deploy --token="$VERCEL_TOKEN" --yes)
-          echo "preview-url=$PREVIEW_URL" >> $GITHUB_OUTPUT
-          echo "Admin Portal preview: $PREVIEW_URL"
-
-      # Railway: Deploy all 13 backend services to isolated PR environment
-      - name: Install Railway CLI
-        run: npm install -g @railway/cli
-
-      - name: Create Railway PR environment
-        env:
-          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
-        run: |
-          railway link --project "$RAILWAY_PROJECT_ID" --environment production
-          if railway environment new "$PR_ENV" --duplicate staging 2>/dev/null; then
-            echo "Created environment $PR_ENV — waiting for service instances to propagate..."
-            sleep 15
-          else
-            echo "Environment $PR_ENV already exists"
-          fi
-
-      - name: Deploy Railway services
-        env:
-          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
-        run: |
-          SERVICES=(
-            api-gateway realtime
-            presence-manager process-manager tenant-manager
-            content-engine identity-engine analytics-engine knowledge-engine
-            channel-access service-access content-process-access perf-knowledge-access
-          )
-          FAILED=0
-          for SERVICE in "${SERVICES[@]}"; do
-            echo "Deploying $SERVICE to $PR_ENV..."
-            if ! railway up --service "$SERVICE" --environment "$PR_ENV" --project "$RAILWAY_PROJECT_ID" --detach; then
-              echo "::error::$SERVICE deploy failed"
-              FAILED=$((FAILED + 1))
-            fi
-          done
-          if [ $FAILED -gt 0 ]; then
-            echo "::error::$FAILED of ${#SERVICES[@]} Railway deploys failed"
-            exit 1
-          fi
-
-      # Upstash: Create or reuse preview Redis database for this PR
-      - name: Create Upstash Preview Redis
-        id: upstash
-        env:
-          UPSTASH_API_KEY: ${{ secrets.UPSTASH_API_KEY }}
-          UPSTASH_EMAIL: ${{ secrets.UPSTASH_EMAIL }}
-        run: |
-          DB_NAME="presence-pr-${{ github.event.pull_request.number }}"
-          # Check if database already exists
-          EXISTING=$(curl -s "https://api.upstash.com/v2/redis/databases" \
-            -u "$UPSTASH_EMAIL:$UPSTASH_API_KEY" | jq -r ".[] | select(.database_name==\"$DB_NAME\") | .endpoint")
-          if [ -n "$EXISTING" ]; then
-            echo "UPSTASH_URL=$EXISTING" >> $GITHUB_OUTPUT
-            echo "Reusing existing Redis: $EXISTING"
-          else
-            RESPONSE=$(curl -s -X POST "https://api.upstash.com/v2/redis/database" \
-              -u "$UPSTASH_EMAIL:$UPSTASH_API_KEY" \
-              -H "Content-Type: application/json" \
-              -d "{\"name\":\"$DB_NAME\",\"region\":\"global\",\"primary_region\":\"us-east-1\"}")
-            ENDPOINT=$(echo "$RESPONSE" | jq -r '.endpoint // empty')
-            if [ -z "$ENDPOINT" ]; then
-              echo "::error::Failed to create Upstash Redis: $RESPONSE"
-              exit 1
-            fi
-            echo "UPSTASH_URL=$ENDPOINT" >> $GITHUB_OUTPUT
-            echo "Preview Redis created: $ENDPOINT"
-          fi
-
-      # Supabase: Branch DB handled via Supabase GitHub integration
-
-      # Post PR comment with all preview URLs
-      - uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: `## Preview Environment Ready
-
-            | Component | Service | URL |
-            |-----------|---------|-----|
-            | C1 | Task UI | ${{ steps.vercel-task-ui.outputs.preview-url }} |
-            | C2 | Admin Portal | ${{ steps.vercel-admin.outputs.preview-url }} |
-            | C3 | API Gateway | Railway PR env |
-            | I1 | Realtime SSE | Railway PR env |
-            | M1 | Presence Manager | Railway PR env |
-            | M2 | Process Manager | Railway PR env |
-            | M3 | Tenant Manager | Railway PR env |
-            | E1 | Content Engine | Railway PR env |
-            | E2 | Identity Engine | Railway PR env |
-            | E3 | Analytics Engine | Railway PR env |
-            | E4 | Knowledge Engine | Railway PR env |
-            | RA1 | Channel Access | Railway PR env |
-            | RA2 | Service Access | Railway PR env |
-            | RA3 | Content Process Access | Railway PR env |
-            | RA4 | Perf/Knowledge Access | Railway PR env |
-            | R1-R5 | Database | Supabase branch (auto) |
-            | -- | Redis | ${{ steps.upstash.outputs.UPSTASH_URL }} |`
-            });
+  # Railway: 13 services auto-deploy via native GitHub App integration
+  # Vercel: 2 Next.js apps auto-deploy via native GitHub App integration
+  # Upstash: Preview Redis provisioned per-PR when needed
