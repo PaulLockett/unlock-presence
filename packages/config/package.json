@@ -4,8 +4,14 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./logger": "./src/logger.ts",
-    "./health": "./src/health.ts",
+    "./logger": {
+      "types": "./src/logger.ts",
+      "default": "./dist/logger.js"
+    },
+    "./health": {
+      "types": "./src/health.ts",
+      "default": "./dist/health.js"
+    },
     "./eslint": "./eslint/base.js",
     "./tsconfig/base": "./tsconfig/base.json",
     "./tsconfig/nextjs": "./tsconfig/nextjs.json"
@@ -15,6 +21,7 @@
     "pino": "^9.6.0"
   },
   "scripts": {
+    "build": "tsc",
     "lint": "eslint src/",
     "test": "vitest run"
   },

@@ -4,10 +4,22 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts",
-    "./engines": "./src/engines/index.ts",
-    "./resource-access": "./src/resource-access/index.ts",
-    "./utilities": "./src/utilities/index.ts"
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./engines": {
+      "types": "./src/engines/index.ts",
+      "default": "./dist/engines/index.js"
+    },
+    "./resource-access": {
+      "types": "./src/resource-access/index.ts",
+      "default": "./dist/resource-access/index.js"
+    },
+    "./utilities": {
+      "types": "./src/utilities/index.ts",
+      "default": "./dist/utilities/index.js"
+    }
   },
   "dependencies": {
     "@presence-os/ai": "workspace:*",
@@ -20,6 +32,7 @@
     "typescript": "^5.7.3"
   },
   "scripts": {
+    "build": "tsc",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit"
   }
