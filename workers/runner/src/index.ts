@@ -16,6 +16,35 @@ if (!config) {
   process.exit(1);
 }
 
+const MAX_RETRIES = 5;
+const BASE_DELAY_MS = 2000;
+
+async function connectWithRetry(
+  address: string,
+  namespace: string,
+  apiKey: string | undefined,
+): Promise<NativeConnection> {
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await NativeConnection.connect({
+        address,
+        ...(apiKey && address.includes("tmprl.cloud")
+          ? { tls: true, apiKey, metadata: { "temporal-namespace": namespace } }
+          : {}),
+      });
+    } catch (err) {
+      const delay = BASE_DELAY_MS * 2 ** (attempt - 1);
+      console.warn(
+        `${COMPONENT}: connection attempt ${attempt}/${MAX_RETRIES} failed, retrying in ${delay}ms...`,
+        err instanceof Error ? err.message : err,
+      );
+      if (attempt === MAX_RETRIES) throw err;
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw new Error("unreachable");
+}
+
 async function run() {
   const address = process.env.TEMPORAL_ADDRESS ?? "localhost:7233";
   const namespace = process.env.TEMPORAL_NAMESPACE ?? "default";
@@ -23,12 +52,7 @@ async function run() {
 
   console.log(`Starting ${COMPONENT} on queue: ${config.taskQueue}`);
 
-  const connection = await NativeConnection.connect({
-    address,
-    ...(apiKey && address.includes("tmprl.cloud")
-      ? { tls: true, apiKey, metadata: { "temporal-namespace": namespace } }
-      : {}),
-  });
+  const connection = await connectWithRetry(address, namespace, apiKey);
 
   // Resolve workflows path for managers
   let workflowsPath: string | undefined;
@@ -76,5 +100,24 @@ async function run() {
 
 run().catch((err) => {
   console.error(`${COMPONENT} worker failed:`, err);
+
+  // If connection failed, idle instead of crash-looping.
+  // This prevents Railway from marking deploys as failed in preview
+  // environments where Temporal Cloud isn't configured.
+  if (
+    err instanceof Error &&
+    (err.message.includes("ConnectError") ||
+      err.message.includes("Transport"))
+  ) {
+    console.warn(
+      `${COMPONENT}: entering idle mode — Temporal not reachable at ${process.env.TEMPORAL_ADDRESS ?? "localhost:7233"}`,
+    );
+    // Keep process alive; SIGTERM from Railway will still shut us down
+    const shutdown = () => process.exit(0);
+    process.on("SIGINT", shutdown);
+    process.on("SIGTERM", shutdown);
+    return;
+  }
+
   process.exit(1);
 });

@@ -1,10 +1,12 @@
 name: Preview
+
 on:
   pull_request:
     types: [opened, synchronize, reopened]
 
 jobs:
-  test:
+  typecheck:
+    name: Typecheck
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -12,86 +14,30 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: pnpm }
       - run: pnpm install --frozen-lockfile
-      - run: pnpm turbo typecheck lint test
+      - run: pnpm turbo typecheck
 
-  deploy-previews:
-    needs: test
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo lint
 
-      # Vercel: C1 Task UI preview
-      - uses: amondnet/vercel-action@v25
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_TASK_UI_PROJECT_ID }}
-          working-directory: apps/task-ui
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo test
 
-      # Vercel: C2 Admin Portal preview
-      - uses: amondnet/vercel-action@v25
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_ADMIN_PROJECT_ID }}
-          working-directory: apps/admin-portal
-
-      # Railway: PR environment for all backend services
-      - uses: railway/deploy-action@v1
-        with:
-          railway-token: ${{ secrets.RAILWAY_TOKEN }}
-          service: api-gateway
-          environment: pr-${{ github.event.pull_request.number }}
-
-      - uses: railway/deploy-action@v1
-        with:
-          railway-token: ${{ secrets.RAILWAY_TOKEN }}
-          service: realtime
-          environment: pr-${{ github.event.pull_request.number }}
-
-      - uses: railway/deploy-action@v1
-        with:
-          railway-token: ${{ secrets.RAILWAY_TOKEN }}
-          service: presence-worker
-          environment: pr-${{ github.event.pull_request.number }}
-
-      - uses: railway/deploy-action@v1
-        with:
-          railway-token: ${{ secrets.RAILWAY_TOKEN }}
-          service: automation-worker
-          environment: pr-${{ github.event.pull_request.number }}
-
-      - uses: railway/deploy-action@v1
-        with:
-          railway-token: ${{ secrets.RAILWAY_TOKEN }}
-          service: account-worker
-          environment: pr-${{ github.event.pull_request.number }}
-
-      # Upstash: Create preview Redis database for this PR
-      - name: Create Upstash Preview Redis
-        env:
-          UPSTASH_API_KEY: ${{ secrets.UPSTASH_API_KEY }}
-          UPSTASH_EMAIL: ${{ secrets.UPSTASH_EMAIL }}
-        run: |
-          echo "Preview Redis for PR #${{ github.event.pull_request.number }}"
-
-      # Supabase: Branch DB handled via Supabase GitHub integration
-
-      # Post PR comment with all preview URLs
-      - uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: `## Preview Environment Ready
-              | Service | URL |
-              |---------|-----|
-              | Task UI | [Preview](https://task-ui-pr-${context.issue.number}.vercel.app) |
-              | Admin Portal | [Preview](https://admin-pr-${context.issue.number}.vercel.app) |
-              | API Gateway | Railway PR env |
-              | Database | Supabase branch (auto) |
-              | Temporal | Shared dev namespace |
-              | Redis | Upstash preview (auto) |`
-            });
+  # Railway: 13 services auto-deploy via native GitHub App integration
+  # Vercel: 2 Next.js apps auto-deploy via native GitHub App integration
+  # Upstash: Preview Redis provisioned per-PR when needed

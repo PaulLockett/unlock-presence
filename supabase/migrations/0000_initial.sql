@@ -321,7 +321,7 @@ CREATE OR REPLACE FUNCTION current_tenant_id() RETURNS UUID AS $$
   );
 $$ LANGUAGE sql STABLE;
 
-CREATE OR REPLACE FUNCTION current_role() RETURNS TEXT AS $$
+CREATE OR REPLACE FUNCTION get_current_role() RETURNS TEXT AS $$
   SELECT COALESCE(
     current_setting('request.jwt.claims', true)::jsonb ->> 'role',
     'viewer'
@@ -386,12 +386,12 @@ CREATE POLICY tenant_isolation_audit_log ON audit_log FOR ALL USING (tenant_id =
 -- Brand-level read access on brand-scoped tables
 CREATE POLICY brand_read_content ON content FOR SELECT USING (
   tenant_id = current_tenant_id()
-  AND (current_role() = 'owner' OR brand_id = ANY(brands_with_permission('read')))
+  AND (get_current_role() = 'owner' OR brand_id = ANY(brands_with_permission('read')))
 );
 
 CREATE POLICY brand_read_tasks ON tasks FOR SELECT USING (
   tenant_id = current_tenant_id()
-  AND (current_role() = 'owner' OR brand_id = ANY(brands_with_permission('read')))
+  AND (get_current_role() = 'owner' OR brand_id = ANY(brands_with_permission('read')))
 );
 
 ----------------------------------------------------------------------
