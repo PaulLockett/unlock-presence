@@ -1,3 +1,6 @@
+[project]
+id = "lekqisogkecixjnpiyga"
+
 [api]
 enabled = true
 port = 54341
