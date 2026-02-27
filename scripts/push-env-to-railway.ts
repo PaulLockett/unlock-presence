@@ -82,6 +82,19 @@ const VAR_ROUTING: Record<string, readonly ServiceName[] | "ALL"> = {
 
   // PostHog → api-gateway (server-side analytics)
   POSTHOG_API_KEY: ["api-gateway"],
+
+  // QStash → all Temporal workers (producers) + realtime (consumer)
+  QSTASH_TOKEN: [...TEMPORAL_WORKERS, "realtime"],
+  QSTASH_CURRENT_SIGNING_KEY: ["realtime"],
+  QSTASH_NEXT_SIGNING_KEY: ["realtime"],
+  REALTIME_SERVICE_URL: TEMPORAL_WORKERS,
+
+  // Resend → Temporal workers that send notifications
+  RESEND_API_KEY: TEMPORAL_WORKERS,
+
+  // Service auth
+  SERVICE_TOKEN_SECRET: "ALL" as const,
+  SUPABASE_JWT_SECRET: ["api-gateway", "realtime"],
 };
 
 function parseEnvFile(path: string): Record<string, string> {
