@@ -2,7 +2,7 @@
 # COMPONENT env var selects which service to run
 
 # ── Build stage ──────────────────────────────────────────
-FROM node:20-alpine AS builder
+FROM node:20-slim AS builder
 
 RUN corepack enable && corepack prepare pnpm@9 --activate
 
@@ -36,7 +36,7 @@ COPY apps/api-gateway/ apps/api-gateway/
 RUN pnpm turbo build
 
 # ── Runtime stage ────────────────────────────────────────
-FROM node:20-alpine AS runner
+FROM node:20-slim AS runner
 
 RUN corepack enable && corepack prepare pnpm@9 --activate
 

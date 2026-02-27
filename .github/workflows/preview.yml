@@ -1,10 +1,12 @@
 name: Preview
+
 on:
   pull_request:
     types: [opened, synchronize, reopened]
 
 jobs:
-  test:
+  typecheck:
+    name: Typecheck
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -12,156 +14,30 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: pnpm }
       - run: pnpm install --frozen-lockfile
-      - run: pnpm turbo typecheck lint test
+      - run: pnpm turbo typecheck
 
-  deploy-previews:
-    needs: test
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
-    env:
-      PR_ENV: pr-${{ github.event.pull_request.number }}
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo lint
 
-      # Vercel: C1 Task UI preview
-      - uses: amondnet/vercel-action@v25
-        id: vercel-task-ui
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_TASK_UI_PROJECT_ID }}
-          working-directory: apps/task-ui
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo test
 
-      # Vercel: C2 Admin Portal preview
-      - uses: amondnet/vercel-action@v25
-        id: vercel-admin
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_ADMIN_PROJECT_ID }}
-          working-directory: apps/admin-portal
-
-      # Railway: Deploy all 13 backend services to PR environment
-      - uses: railway/deploy-action@v1
-        with:
-          railway-token: ${{ secrets.RAILWAY_TOKEN }}
-          service: api-gateway
-          environment: ${{ env.PR_ENV }}
-
-      - uses: railway/deploy-action@v1
-        with:
-          railway-token: ${{ secrets.RAILWAY_TOKEN }}
-          service: realtime
-          environment: ${{ env.PR_ENV }}
-
-      - uses: railway/deploy-action@v1
-        with:
-          railway-token: ${{ secrets.RAILWAY_TOKEN }}
-          service: presence-manager
-          environment: ${{ env.PR_ENV }}
-
-      - uses: railway/deploy-action@v1
-        with:
-          railway-token: ${{ secrets.RAILWAY_TOKEN }}
-          service: process-manager
-          environment: ${{ env.PR_ENV }}
-
-      - uses: railway/deploy-action@v1
-        with:
-          railway-token: ${{ secrets.RAILWAY_TOKEN }}
-          service: tenant-manager
-          environment: ${{ env.PR_ENV }}
-
-      - uses: railway/deploy-action@v1
-        with:
-          railway-token: ${{ secrets.RAILWAY_TOKEN }}
-          service: content-engine
-          environment: ${{ env.PR_ENV }}
-
-      - uses: railway/deploy-action@v1
-        with:
-          railway-token: ${{ secrets.RAILWAY_TOKEN }}
-          service: identity-engine
-          environment: ${{ env.PR_ENV }}
-
-      - uses: railway/deploy-action@v1
-        with:
-          railway-token: ${{ secrets.RAILWAY_TOKEN }}
-          service: analytics-engine
-          environment: ${{ env.PR_ENV }}
-
-      - uses: railway/deploy-action@v1
-        with:
-          railway-token: ${{ secrets.RAILWAY_TOKEN }}
-          service: knowledge-engine
-          environment: ${{ env.PR_ENV }}
-
-      - uses: railway/deploy-action@v1
-        with:
-          railway-token: ${{ secrets.RAILWAY_TOKEN }}
-          service: channel-access
-          environment: ${{ env.PR_ENV }}
-
-      - uses: railway/deploy-action@v1
-        with:
-          railway-token: ${{ secrets.RAILWAY_TOKEN }}
-          service: service-access
-          environment: ${{ env.PR_ENV }}
-
-      - uses: railway/deploy-action@v1
-        with:
-          railway-token: ${{ secrets.RAILWAY_TOKEN }}
-          service: content-process-access
-          environment: ${{ env.PR_ENV }}
-
-      - uses: railway/deploy-action@v1
-        with:
-          railway-token: ${{ secrets.RAILWAY_TOKEN }}
-          service: perf-knowledge-access
-          environment: ${{ env.PR_ENV }}
-
-      # Upstash: Create preview Redis database for this PR
-      - name: Create Upstash Preview Redis
-        id: upstash
-        env:
-          UPSTASH_API_KEY: ${{ secrets.UPSTASH_API_KEY }}
-          UPSTASH_EMAIL: ${{ secrets.UPSTASH_EMAIL }}
-        run: |
-          RESPONSE=$(curl -s -X POST "https://api.upstash.com/v2/redis/database" \
-            -u "$UPSTASH_EMAIL:$UPSTASH_API_KEY" \
-            -H "Content-Type: application/json" \
-            -d "{\"name\":\"presence-pr-${{ github.event.pull_request.number }}\",\"region\":\"global\",\"primary_region\":\"us-east-1\"}")
-          echo "UPSTASH_URL=$(echo $RESPONSE | jq -r '.endpoint')" >> $GITHUB_OUTPUT
-          echo "Preview Redis created: $(echo $RESPONSE | jq -r '.endpoint')"
-
-      # Supabase: Branch DB handled via Supabase GitHub integration
-
-      # Post PR comment with all preview URLs
-      - uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: `## Preview Environment Ready
-
-            | Component | Service | URL |
-            |-----------|---------|-----|
-            | C1 | Task UI | ${{ steps.vercel-task-ui.outputs.preview-url || 'Deploying...' }} |
-            | C2 | Admin Portal | ${{ steps.vercel-admin.outputs.preview-url || 'Deploying...' }} |
-            | C3 | API Gateway | Railway PR env |
-            | I1 | Realtime SSE | Railway PR env |
-            | M1 | Presence Manager | Railway PR env |
-            | M2 | Process Manager | Railway PR env |
-            | M3 | Tenant Manager | Railway PR env |
-            | E1 | Content Engine | Railway PR env |
-            | E2 | Identity Engine | Railway PR env |
-            | E3 | Analytics Engine | Railway PR env |
-            | E4 | Knowledge Engine | Railway PR env |
-            | RA1 | Channel Access | Railway PR env |
-            | RA2 | Service Access | Railway PR env |
-            | RA3 | Content Process Access | Railway PR env |
-            | RA4 | Perf/Knowledge Access | Railway PR env |
-            | R1-R5 | Database | Supabase branch (auto) |
-            | -- | Redis | Upstash preview |`
-            });
+  # Railway: 13 services auto-deploy via native GitHub App integration
+  # Vercel: 2 Next.js apps auto-deploy via native GitHub App integration
+  # Upstash: Preview Redis provisioned per-PR when needed
