@@ -21,6 +21,7 @@ COPY packages/temporal-client/package.json packages/temporal-client/package.json
 COPY packages/auth/package.json packages/auth/package.json
 COPY packages/honcho/package.json packages/honcho/package.json
 COPY packages/message-bus/package.json packages/message-bus/package.json
+COPY packages/notification/package.json packages/notification/package.json
 COPY packages/ai/package.json packages/ai/package.json
 COPY workers/runner/package.json workers/runner/package.json
 COPY workers/realtime/package.json workers/realtime/package.json
