@@ -40,4 +40,197 @@ jobs:
 
   # Railway: 13 services auto-deploy via native GitHub App integration
   # Vercel: 2 Next.js apps auto-deploy via native GitHub App integration
-  # Upstash: Preview Redis provisioned per-PR when needed
+
+  redis-preview:
+    name: Redis Preview
+    runs-on: ubuntu-latest
+    env:
+      DB_NAME: presence-pr-${{ github.event.pull_request.number }}
+      UPSTASH_API_BASE: https://api.upstash.com
+    steps:
+      - name: Provision Upstash Redis database
+        id: provision
+        env:
+          UPSTASH_EMAIL: ${{ secrets.UPSTASH_EMAIL }}
+          UPSTASH_API_KEY: ${{ secrets.UPSTASH_API_KEY }}
+        run: |
+          # Check if database already exists
+          EXISTING=$(curl -s -u "${UPSTASH_EMAIL}:${UPSTASH_API_KEY}" \
+            "${UPSTASH_API_BASE}/v2/redis/databases" \
+            | jq -r --arg name "$DB_NAME" '.[] | select(.database_name == $name)')
+
+          if [ -n "$EXISTING" ]; then
+            echo "Reusing existing database: $DB_NAME"
+            DB_ID=$(echo "$EXISTING" | jq -r '.database_id')
+            ENDPOINT=$(echo "$EXISTING" | jq -r '.endpoint')
+            REST_TOKEN=$(echo "$EXISTING" | jq -r '.rest_token')
+          else
+            echo "Creating new database: $DB_NAME"
+            RESPONSE=$(curl -s -u "${UPSTASH_EMAIL}:${UPSTASH_API_KEY}" \
+              -X POST "${UPSTASH_API_BASE}/v2/redis/database" \
+              -H "Content-Type: application/json" \
+              -d "$(jq -n --arg name "$DB_NAME" '{name: $name, region: "us-east-1", tls: true}')")
+
+            DB_ID=$(echo "$RESPONSE" | jq -r '.database_id')
+            ENDPOINT=$(echo "$RESPONSE" | jq -r '.endpoint')
+            REST_TOKEN=$(echo "$RESPONSE" | jq -r '.rest_token')
+
+            if [ "$DB_ID" = "null" ] || [ -z "$DB_ID" ]; then
+              echo "::error::Failed to create Upstash Redis database"
+              echo "$RESPONSE" | jq .
+              exit 1
+            fi
+          fi
+
+          # Mask the token in logs
+          echo "::add-mask::${REST_TOKEN}"
+
+          REST_URL="https://${ENDPOINT}"
+          echo "db-id=${DB_ID}" >> "$GITHUB_OUTPUT"
+          echo "rest-url=${REST_URL}" >> "$GITHUB_OUTPUT"
+          echo "rest-token=${REST_TOKEN}" >> "$GITHUB_OUTPUT"
+          echo "endpoint=${ENDPOINT}" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for Railway PR environment
+        id: railway
+        env:
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+        run: |
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          TIMEOUT=300  # 5 minutes
+          INTERVAL=10
+          ELAPSED=0
+
+          echo "Waiting for Railway PR environment (PR #${PR_NUMBER})..."
+
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            RESPONSE=$(curl -s -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Authorization: Bearer ${RAILWAY_API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d "$(jq -n --arg projectId "$RAILWAY_PROJECT_ID" '{
+                query: "query($projectId: String!) { environments(projectId: $projectId) { edges { node { id name meta } } } }",
+                variables: { projectId: $projectId }
+              }')")
+
+            # Railway names PR environments "PR #N"
+            ENV_ID=$(echo "$RESPONSE" | jq -r --argjson pr "$PR_NUMBER" '
+              .data.environments.edges[]
+              | select(.node.meta.prNumber == $pr or .node.name == "PR #\($pr)")
+              | .node.id' 2>/dev/null | head -1)
+
+            if [ -n "$ENV_ID" ] && [ "$ENV_ID" != "null" ]; then
+              echo "Found Railway environment: $ENV_ID"
+              echo "env-id=${ENV_ID}" >> "$GITHUB_OUTPUT"
+              echo "found=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            echo "  Not found yet... (${ELAPSED}s / ${TIMEOUT}s)"
+            sleep $INTERVAL
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+
+          echo "::warning::Railway PR environment not found after ${TIMEOUT}s. Will retry on next push."
+          echo "found=false" >> "$GITHUB_OUTPUT"
+
+      - name: Inject Redis vars into Railway services
+        if: steps.railway.outputs.found == 'true'
+        id: inject
+        env:
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+        run: |
+          ENV_ID="${{ steps.railway.outputs.env-id }}"
+          REST_URL="${{ steps.provision.outputs.rest-url }}"
+          REST_TOKEN="${{ steps.provision.outputs.rest-token }}"
+
+          # Get service IDs for api-gateway and realtime
+          SERVICES_RESPONSE=$(curl -s -X POST https://backboard.railway.com/graphql/v2 \
+            -H "Authorization: Bearer ${RAILWAY_API_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n --arg projectId "$RAILWAY_PROJECT_ID" '{
+              query: "query($projectId: String!) { project(id: $projectId) { services { edges { node { id name } } } } }",
+              variables: { projectId: $projectId }
+            }')")
+
+          INJECTED=0
+          for SERVICE_NAME in api-gateway realtime; do
+            SERVICE_ID=$(echo "$SERVICES_RESPONSE" | jq -r --arg name "$SERVICE_NAME" '
+              .data.project.services.edges[] | select(.node.name == $name) | .node.id')
+
+            if [ -z "$SERVICE_ID" ] || [ "$SERVICE_ID" = "null" ]; then
+              echo "::warning::Service '$SERVICE_NAME' not found in Railway project"
+              continue
+            fi
+
+            echo "Injecting Redis vars into $SERVICE_NAME ($SERVICE_ID)..."
+
+            RESULT=$(curl -s -X POST https://backboard.railway.com/graphql/v2 \
+              -H "Authorization: Bearer ${RAILWAY_API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d "$(jq -n \
+                --arg projectId "$RAILWAY_PROJECT_ID" \
+                --arg envId "$ENV_ID" \
+                --arg serviceId "$SERVICE_ID" \
+                --arg restUrl "$REST_URL" \
+                --arg restToken "$REST_TOKEN" \
+                '{
+                  query: "mutation($input: VariableCollectionUpsertInput!) { variableCollectionUpsert(input: $input) }",
+                  variables: {
+                    input: {
+                      projectId: $projectId,
+                      environmentId: $envId,
+                      serviceId: $serviceId,
+                      variables: {
+                        UPSTASH_REDIS_REST_URL: $restUrl,
+                        UPSTASH_REDIS_REST_TOKEN: $restToken
+                      }
+                    }
+                  }
+                }')")
+
+            if echo "$RESULT" | jq -e '.errors' > /dev/null 2>&1; then
+              echo "::warning::Failed to inject vars into $SERVICE_NAME"
+              echo "$RESULT" | jq '.errors'
+            else
+              echo "Injected into $SERVICE_NAME"
+              INJECTED=$((INJECTED + 1))
+            fi
+          done
+
+          echo "injected=${INJECTED}" >> "$GITHUB_OUTPUT"
+
+      - name: Comment on PR
+        if: github.event.action == 'opened' || github.event.action == 'reopened'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const restUrl = '${{ steps.provision.outputs.rest-url }}';
+            const endpoint = '${{ steps.provision.outputs.endpoint }}';
+            const dbName = process.env.DB_NAME;
+            const railwayFound = '${{ steps.railway.outputs.found }}' === 'true';
+            const injected = '${{ steps.inject.outputs.injected }}' || '0';
+
+            const railwayStatus = railwayFound
+              ? `Injected into ${injected}/2 services`
+              : 'Railway env not ready — will retry on next push';
+
+            const body = [
+              '### Redis Preview Database',
+              '',
+              '| Property | Value |',
+              '|----------|-------|',
+              `| Database | \`${dbName}\` |`,
+              `| Endpoint | \`${endpoint}\` |`,
+              `| Railway  | ${railwayStatus} |`,
+              '',
+              '_This database will be automatically deleted when the PR is closed._',
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
