@@ -202,11 +202,9 @@ jobs:
           echo "injected=${INJECTED}" >> "$GITHUB_OUTPUT"
 
       - name: Comment on PR
-        if: github.event.action == 'opened' || github.event.action == 'reopened'
         uses: actions/github-script@v7
         with:
           script: |
-            const restUrl = '${{ steps.provision.outputs.rest-url }}';
             const endpoint = '${{ steps.provision.outputs.endpoint }}';
             const dbName = process.env.DB_NAME;
             const railwayFound = '${{ steps.railway.outputs.found }}' === 'true';
@@ -228,9 +226,26 @@ jobs:
               '_This database will be automatically deleted when the PR is closed._',
             ].join('\n');
 
-            await github.rest.issues.createComment({
+            // Find existing comment to update, or create new one
+            const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-              body,
             });
+            const existing = comments.find(c => c.body.includes('### Redis Preview Database'));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
