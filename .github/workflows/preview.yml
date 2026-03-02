@@ -69,7 +69,7 @@ jobs:
             RESPONSE=$(curl -s -u "${UPSTASH_EMAIL}:${UPSTASH_API_KEY}" \
               -X POST "${UPSTASH_API_BASE}/v2/redis/database" \
               -H "Content-Type: application/json" \
-              -d "$(jq -n --arg name "$DB_NAME" '{name: $name, region: "us-east-1", tls: true}')")
+              -d "$(jq -n --arg name "$DB_NAME" '{database_name: $name, platform: "aws", primary_region: "us-east-1", tls: true}')")
 
             DB_ID=$(echo "$RESPONSE" | jq -r '.database_id')
             ENDPOINT=$(echo "$RESPONSE" | jq -r '.endpoint')
