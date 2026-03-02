@@ -109,14 +109,14 @@ jobs:
               -H "Authorization: Bearer ${RAILWAY_API_TOKEN}" \
               -H "Content-Type: application/json" \
               -d "$(jq -n --arg projectId "$RAILWAY_PROJECT_ID" '{
-                query: "query($projectId: String!) { environments(projectId: $projectId) { edges { node { id name meta } } } }",
+                query: "query($projectId: String!) { environments(projectId: $projectId) { edges { node { id name } } } }",
                 variables: { projectId: $projectId }
               }')")
 
-            # Railway names PR environments "PR #N"
-            ENV_ID=$(echo "$RESPONSE" | jq -r --argjson pr "$PR_NUMBER" '
+            # Railway names PR environments "{repo}-pr-{number}"
+            ENV_ID=$(echo "$RESPONSE" | jq -r --arg suffix "pr-${PR_NUMBER}" '
               .data.environments.edges[]
-              | select(.node.meta.prNumber == $pr or .node.name == "PR #\($pr)")
+              | select(.node.name | endswith($suffix))
               | .node.id' 2>/dev/null | head -1)
 
             if [ -n "$ENV_ID" ] && [ "$ENV_ID" != "null" ]; then
