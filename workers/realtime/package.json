@@ -14,6 +14,7 @@
     "@hono/node-server": "^1.13.8",
     "@presence-os/auth": "workspace:*",
     "@presence-os/db": "workspace:*",
+    "@presence-os/message-bus": "workspace:*",
     "@presence-os/schemas": "workspace:*",
     "hono": "^4.7.4"
   },

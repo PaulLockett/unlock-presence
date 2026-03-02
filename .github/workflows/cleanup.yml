@@ -1,0 +1,64 @@
+name: Cleanup
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  redis-cleanup:
+    name: Redis Cleanup
+    runs-on: ubuntu-latest
+    env:
+      DB_NAME: presence-pr-${{ github.event.pull_request.number }}
+      UPSTASH_API_BASE: https://api.upstash.com
+    steps:
+      - name: Delete Upstash Redis database
+        id: delete
+        env:
+          UPSTASH_EMAIL: ${{ secrets.UPSTASH_EMAIL }}
+          UPSTASH_API_KEY: ${{ secrets.UPSTASH_API_KEY }}
+        run: |
+          # Find the database by name
+          DB_ID=$(curl -s -u "${UPSTASH_EMAIL}:${UPSTASH_API_KEY}" \
+            "${UPSTASH_API_BASE}/v2/redis/databases" \
+            | jq -r --arg name "$DB_NAME" '.[] | select(.database_name == $name) | .database_id')
+
+          if [ -z "$DB_ID" ] || [ "$DB_ID" = "null" ]; then
+            echo "No database found with name: $DB_NAME (already deleted or never created)"
+            echo "deleted=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Deleting database: $DB_NAME ($DB_ID)"
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -u "${UPSTASH_EMAIL}:${UPSTASH_API_KEY}" \
+            -X DELETE "${UPSTASH_API_BASE}/v2/redis/database/${DB_ID}")
+
+          if [ "$RESPONSE" = "200" ]; then
+            echo "Database deleted successfully"
+            echo "deleted=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Delete returned HTTP $RESPONSE"
+            echo "deleted=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const deleted = '${{ steps.delete.outputs.deleted }}' === 'true';
+            const dbName = process.env.DB_NAME;
+
+            const body = deleted
+              ? `### Redis Preview Cleanup\n\nDatabase \`${dbName}\` has been deleted.`
+              : `### Redis Preview Cleanup\n\nNo database \`${dbName}\` found (already cleaned up or never created).`;
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });

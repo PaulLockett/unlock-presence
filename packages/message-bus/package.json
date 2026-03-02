@@ -1,5 +1,5 @@
 {
-  "name": "@presence-os/temporal-client",
+  "name": "@presence-os/message-bus",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@presence-os/schemas": "workspace:*",
-    "@temporalio/client": "^1.11.7"
+    "@upstash/qstash": "^2.7.17"
   },
   "devDependencies": {
     "@types/node": "^25.3.0",

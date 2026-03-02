@@ -25,6 +25,8 @@
     "@presence-os/ai": "workspace:*",
     "@presence-os/auth": "workspace:*",
     "@presence-os/db": "workspace:*",
+    "@presence-os/message-bus": "workspace:*",
+    "@presence-os/notification": "workspace:*",
     "@presence-os/schemas": "workspace:*"
   },
   "devDependencies": {

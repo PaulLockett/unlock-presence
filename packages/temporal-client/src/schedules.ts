@@ -1,6 +1,6 @@
-// U2: Scheduling — Temporal Schedule management stubs
+// U2: Scheduling — Temporal Schedule management
 
-import type { Client } from "@temporalio/client";
+import { Client, ScheduleOverlapPolicy } from "@temporalio/client";
 import { TASK_QUEUES } from "./task-queues.js";
 
 export interface ScheduleConfig {
@@ -12,25 +12,69 @@ export interface ScheduleConfig {
   overlapPolicy?: "SKIP" | "BUFFER_ONE" | "BUFFER_ALL" | "CANCEL_OTHER" | "TERMINATE_OTHER";
 }
 
+const OVERLAP_MAP: Record<string, ScheduleOverlapPolicy> = {
+  SKIP: ScheduleOverlapPolicy.SKIP,
+  BUFFER_ONE: ScheduleOverlapPolicy.BUFFER_ONE,
+  BUFFER_ALL: ScheduleOverlapPolicy.BUFFER_ALL,
+  CANCEL_OTHER: ScheduleOverlapPolicy.CANCEL_OTHER,
+  TERMINATE_OTHER: ScheduleOverlapPolicy.TERMINATE_OTHER,
+};
+
 export async function createSchedule(
-  _client: Client,
-  _config: ScheduleConfig,
+  client: Client,
+  config: ScheduleConfig,
 ): Promise<void> {
-  throw new Error("Not implemented: createSchedule");
+  await client.schedule.create({
+    scheduleId: config.scheduleId,
+    spec: {
+      cronExpressions: [config.cronExpression],
+    },
+    action: {
+      type: "startWorkflow",
+      workflowType: config.workflowType,
+      taskQueue: config.taskQueue,
+      args: config.args,
+    },
+    policies: {
+      overlap: config.overlapPolicy
+        ? OVERLAP_MAP[config.overlapPolicy] ?? ScheduleOverlapPolicy.SKIP
+        : ScheduleOverlapPolicy.SKIP,
+    },
+  });
 }
 
 export async function pauseSchedule(
-  _client: Client,
-  _scheduleId: string,
+  client: Client,
+  scheduleId: string,
 ): Promise<void> {
-  throw new Error("Not implemented: pauseSchedule");
+  const handle = client.schedule.getHandle(scheduleId);
+  await handle.pause();
+}
+
+export async function resumeSchedule(
+  client: Client,
+  scheduleId: string,
+): Promise<void> {
+  const handle = client.schedule.getHandle(scheduleId);
+  await handle.unpause();
 }
 
 export async function deleteSchedule(
-  _client: Client,
-  _scheduleId: string,
+  client: Client,
+  scheduleId: string,
 ): Promise<void> {
-  throw new Error("Not implemented: deleteSchedule");
+  const handle = client.schedule.getHandle(scheduleId);
+  await handle.delete();
+}
+
+export async function listSchedules(
+  client: Client,
+): Promise<Array<{ scheduleId: string }>> {
+  const schedules: Array<{ scheduleId: string }> = [];
+  for await (const schedule of client.schedule.list()) {
+    schedules.push({ scheduleId: schedule.scheduleId });
+  }
+  return schedules;
 }
 
 // Default schedules for a brand (created during onboarding)
