@@ -2,8 +2,9 @@
 
 import { createDb } from "@presence-os/db";
 import { channelConnections, content, contentPerformance } from "@presence-os/db";
-import { encryptToken } from "@presence-os/auth";
+import { encryptToken, decryptToken } from "@presence-os/auth";
 import { eq, and } from "drizzle-orm";
+import { getAdapter } from "./adapters/index.js";
 
 const getDb = () => createDb();
 const getEncryptionSecret = () => {
@@ -16,12 +17,14 @@ const getEncryptionSecret = () => {
 
 export interface PlatformAdapter {
   post(params: {
+    accessToken: string;
     accountId: string;
     content: { title?: string | null; body?: string | null; mediaUrls?: string[] | null };
     platform: string;
   }): Promise<{ platformPostId: string; url?: string }>;
 
   getMetrics(params: {
+    accessToken: string;
     accountId: string;
     platformPostIds: string[];
     platform: string;
@@ -38,36 +41,17 @@ export interface PlatformAdapter {
   >;
 }
 
-// Stub adapter — returns synthetic data. Real adapters added with PRE-11.
-const stubAdapter: PlatformAdapter = {
-  async post({ platform }) {
-    const id = `${platform}-${Date.now()}`;
-    return { platformPostId: id, url: `https://${platform}.example.com/posts/${id}` };
-  },
-  async getMetrics({ platformPostIds }) {
-    return platformPostIds.map((id) => ({
-      contentId: id,
-      impressions: 0,
-      engagements: 0,
-      clicks: 0,
-      reach: 0,
-      engagementRate: 0,
-      rawPlatformData: {},
-    }));
-  },
-};
-
 type AdapterFactory = (platform: string) => PlatformAdapter;
-let adapterFactory: AdapterFactory = () => stubAdapter;
+let adapterFactory: AdapterFactory = getAdapter;
 
 /** Override adapter factory for testing. */
 export function _setAdapterFactory(factory: AdapterFactory): void {
   adapterFactory = factory;
 }
 
-/** Reset adapter factory to default stub. */
+/** Reset adapter factory to default (real adapters). */
 export function _resetAdapterFactory(): void {
-  adapterFactory = () => stubAdapter;
+  adapterFactory = getAdapter;
 }
 
 // --- Input types ---
@@ -182,9 +166,12 @@ export async function distribute(input: DistributeInput): Promise<{ platformPost
     throw new Error(`Content ${input.contentId} not found`);
   }
 
-  // Post via platform adapter
+  // Decrypt credentials and post via platform adapter
+  const secret = getEncryptionSecret();
+  const accessToken = decryptToken(connection.accessTokenEncrypted, secret);
   const adapter = adapterFactory(input.platform);
   const result = await adapter.post({
+    accessToken,
     accountId: connection.accountId,
     content: contentRow,
     platform: input.platform,
@@ -222,9 +209,12 @@ export async function harvest(input: HarvestInput): Promise<{ metricsCount: numb
     );
   }
 
-  // Call platform adapter for metrics
+  // Decrypt credentials and fetch metrics via platform adapter
+  const secret = getEncryptionSecret();
+  const accessToken = decryptToken(connection.accessTokenEncrypted, secret);
   const adapter = adapterFactory(input.platform);
   const metrics = await adapter.getMetrics({
+    accessToken,
     accountId: connection.accountId,
     platformPostIds: input.contentIds,
     platform: input.platform,
