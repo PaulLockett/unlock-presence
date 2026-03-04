@@ -44,6 +44,14 @@ vi.mock("@presence-os/db", () => ({
 
 vi.mock("@presence-os/auth", () => ({
   encryptToken: vi.fn((token: string) => `encrypted:${token}`),
+  decryptToken: vi.fn((cipher: string) => cipher.replace("encrypted:", "")),
+}));
+
+vi.mock("./adapters/index.js", () => ({
+  getAdapter: vi.fn(() => ({
+    post: vi.fn(),
+    getMetrics: vi.fn(),
+  })),
 }));
 
 vi.mock("drizzle-orm", () => ({
@@ -143,7 +151,7 @@ describe("distribute", () => {
       if (selectCall === 1) {
         // Connection query — uses .limit()
         return Object.assign([] as unknown[], {
-          limit: vi.fn().mockReturnValue([{ id: "conn-1", accountId: "acc1" }]),
+          limit: vi.fn().mockReturnValue([{ id: "conn-1", accountId: "acc1", accessTokenEncrypted: "encrypted:secret-token" }]),
         });
       }
       // Content query — destructured directly from .where()
@@ -165,7 +173,9 @@ describe("distribute", () => {
     });
 
     expect(result).toEqual({ platformPostId: "x-123", url: "https://x.com/123" });
-    expect(mockAdapter.post).toHaveBeenCalled();
+    expect(mockAdapter.post).toHaveBeenCalledWith(
+      expect.objectContaining({ accessToken: "secret-token" }),
+    );
   });
 
   it("throws when no active connection", async () => {
@@ -182,7 +192,7 @@ describe("distribute", () => {
       selectCall++;
       if (selectCall === 1) {
         return Object.assign([] as unknown[], {
-          limit: vi.fn().mockReturnValue([{ id: "conn-1", accountId: "acc1" }]),
+          limit: vi.fn().mockReturnValue([{ id: "conn-1", accountId: "acc1", accessTokenEncrypted: "encrypted:tok" }]),
         });
       }
       return []; // Content not found
@@ -223,7 +233,7 @@ describe("harvest", () => {
     };
     _setAdapterFactory(() => mockAdapter);
 
-    mockLimit.mockReturnValue([{ id: "conn-1", accountId: "acc1" }]);
+    mockLimit.mockReturnValue([{ id: "conn-1", accountId: "acc1", accessTokenEncrypted: "encrypted:harvest-token" }]);
 
     const result = await harvest({
       tenantId: "t1",

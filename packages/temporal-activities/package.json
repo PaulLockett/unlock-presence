@@ -28,7 +28,8 @@
     "@presence-os/message-bus": "workspace:*",
     "@presence-os/notification": "workspace:*",
     "@presence-os/schemas": "workspace:*",
-    "drizzle-orm": "^0.38.4"
+    "drizzle-orm": "^0.38.4",
+    "substack-api": "^3.1.0"
   },
   "devDependencies": {
     "@types/node": "^25.3.0",
