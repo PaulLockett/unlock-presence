@@ -22,14 +22,18 @@ import { substackAdapter } from "../adapters/substack.adapter.js";
 // --- X / Twitter ---
 
 const X_TOKEN = process.env.X_BEARER_TOKEN;
+const X_USERNAME = process.env.X_USERNAME;
 const X_TWEET_ID = process.env.X_TEST_TWEET_ID;
 const xTests = X_TOKEN ? describe : describe.skip;
 
 xTests("X Adapter — Smoke", () => {
-  it("verifies auth by fetching /2/users/me", async () => {
-    const res = await fetch("https://api.x.com/2/users/me", {
-      headers: { Authorization: `Bearer ${X_TOKEN}` },
-    });
+  it("verifies auth by looking up user by username", async () => {
+    // /2/users/me requires user-context OAuth; username lookup works with app-only bearer tokens
+    const username = X_USERNAME ?? "X";
+    const res = await fetch(
+      `https://api.x.com/2/users/by/username/${username}`,
+      { headers: { Authorization: `Bearer ${X_TOKEN}` } },
+    );
     expect(res.status).toBe(200);
     const json = (await res.json()) as { data: { id: string; username: string } };
     expect(json.data).toHaveProperty("id");
