@@ -11,7 +11,7 @@
  * Env vars:
  *   X_BEARER_TOKEN         — X OAuth 2.0 user-context bearer token
  *   X_TEST_TWEET_ID        — A known tweet ID for contract test (metrics shape)
- *   SUBSTACK_TOKEN         — Base64-encoded JSON { token, publicationUrl }
+ *   SUBSTACK_TOKEN         — Base64-encoded JSON { substack_sid, connect_sid, publicationUrl }
  *
  * LinkedIn tests remain as it.todo() — no API key available.
  */
@@ -84,18 +84,23 @@ const SS_TOKEN = process.env.SUBSTACK_TOKEN;
 const ssTests = SS_TOKEN ? describe : describe.skip;
 
 ssTests("Substack Adapter — Smoke", () => {
-  it("verifies auth by fetching own profile", async () => {
-    // Parse credentials the same way the adapter does
-    const creds = JSON.parse(Buffer.from(SS_TOKEN!, "base64").toString("utf-8"));
-    expect(creds).toHaveProperty("token");
-    expect(creds).toHaveProperty("publicationUrl");
+  it("verifies auth by parsing credentials and checking connectivity", async () => {
+    // Parse the stored format: { substack_sid, connect_sid, publicationUrl }
+    const stored = JSON.parse(Buffer.from(SS_TOKEN!, "base64").toString("utf-8"));
+    expect(stored).toHaveProperty("substack_sid");
+    expect(stored).toHaveProperty("connect_sid");
+    expect(stored).toHaveProperty("publicationUrl");
 
-    // Import SubstackClient directly — testConnectivity is the cheapest call
+    // Build the inner token the library expects
+    const token = Buffer.from(
+      JSON.stringify({ substack_sid: stored.substack_sid, connect_sid: stored.connect_sid }),
+    ).toString("base64");
+
     const { SubstackClient } = await import("substack-api");
-    const client = new SubstackClient(creds);
+    const client = new SubstackClient({ token, publicationUrl: stored.publicationUrl });
     const connected = await client.testConnectivity();
     expect(connected).toBe(true);
-  });
+  }, 15_000);
 });
 
 ssTests("Substack Adapter — Contract: getMetrics", () => {
