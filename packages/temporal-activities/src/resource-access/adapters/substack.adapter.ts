@@ -5,9 +5,16 @@ import type { PlatformAdapter } from "../channel.activities.js";
 
 /**
  * Parses the accessToken for Substack connections.
- * Expected format: base64-encoded JSON with { token, publicationUrl }.
- * - token: API/session token
- * - publicationUrl: the Substack publication URL (e.g., "https://example.substack.com")
+ *
+ * Storage format (base64-encoded JSON):
+ * {
+ *   "substack_sid": "<substack.sid cookie>",
+ *   "connect_sid": "<connect.sid cookie>",
+ *   "publicationUrl": "https://example.substack.com"
+ * }
+ *
+ * The substack-api library expects { token, publicationUrl } where token is
+ * a base64-encoded JSON of { substack_sid, connect_sid }. We build that here.
  */
 function parseSubstackCredentials(accessToken: string): {
   token: string;
@@ -16,12 +23,16 @@ function parseSubstackCredentials(accessToken: string): {
   const decoded = JSON.parse(
     Buffer.from(accessToken, "base64").toString("utf-8"),
   );
-  if (!decoded.token || !decoded.publicationUrl) {
+  if (!decoded.substack_sid || !decoded.connect_sid || !decoded.publicationUrl) {
     throw new Error(
-      "Substack accessToken must be base64-encoded JSON with { token, publicationUrl }",
+      "Substack accessToken must be base64-encoded JSON with { substack_sid, connect_sid, publicationUrl }",
     );
   }
-  return { token: decoded.token, publicationUrl: decoded.publicationUrl };
+  // Build the inner token the library expects
+  const token = Buffer.from(
+    JSON.stringify({ substack_sid: decoded.substack_sid, connect_sid: decoded.connect_sid }),
+  ).toString("base64");
+  return { token, publicationUrl: decoded.publicationUrl };
 }
 
 export const substackAdapter: PlatformAdapter = {
